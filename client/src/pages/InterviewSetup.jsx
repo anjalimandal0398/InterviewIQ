@@ -13,7 +13,6 @@ import {
 import { IoSparkles } from "react-icons/io5";
 import { useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
-
 import { ServerUrl } from "../App";
 
 
@@ -46,7 +45,9 @@ const formatTime = (seconds) => {
   const secs = seconds % 60;
 
   if (hrs > 0) {
-    return `${hrs}:${mins.toString().padStart(2, "0")}:${secs
+    return `${hrs}:${mins
+      .toString()
+      .padStart(2, "0")}:${secs
       .toString()
       .padStart(2, "0")}`;
   }
@@ -82,20 +83,33 @@ const InterviewSetup = () => {
     TOTAL_INTERVIEW_TIME
   );
 
-  const [questionTimeLeft, setQuestionTimeLeft] = useState(
-    questions.length > 0
-      ? getQuestionTime(questions[0].question)
-      : 60
-  );
+  const [questionTimeLeft, setQuestionTimeLeft] =
+    useState(
+      questions.length > 0
+        ? getQuestionTime(questions[0].question)
+        : 60
+    );
 
   // ===================================================
   // UI STATES
   // ===================================================
 
   const [isSpeaking, setIsSpeaking] = useState(false);
+
   const [isListening, setIsListening] = useState(false);
-  const [loadingEvaluation, setLoadingEvaluation] = useState(false);
-  const [interviewStarted, setInterviewStarted] = useState(false);
+
+  const [loadingEvaluation, setLoadingEvaluation] =
+    useState(false);
+
+  const [interviewStarted, setInterviewStarted] =
+    useState(false);
+
+  const [interviewId, setInterviewId] = useState(
+    interviewData.interviewId || null
+  );
+
+  const [startingInterview, setStartingInterview] =
+    useState(false);
 
   const [aiMessage, setAiMessage] = useState(
     "Hello! I am your AI interviewer. Let's begin your interview."
@@ -106,8 +120,14 @@ const InterviewSetup = () => {
   // ===================================================
 
   const recognitionRef = useRef(null);
+
   const startTimeRef = useRef(Date.now());
+
   const questionStartTimeRef = useRef(Date.now());
+
+  const interviewStartCalledRef = useRef(false);
+
+  const finishCalledRef = useRef(false);
 
   // ===================================================
   // CURRENT QUESTION
@@ -117,95 +137,28 @@ const InterviewSetup = () => {
     questions[currentQuestion];
 
   // ===================================================
-  // START INTERVIEW
-  // ===================================================
-
-  useEffect(() => {
-    if (!questions.length) return;
-
-    setInterviewStarted(true);
-
-    const greeting =
-      `Hello ${interviewData.name || "Anjali"}.
-      Welcome to your ${interviewData.type || "AI"} interview.
-      I will ask you ${questions.length} questions.
-      Please answer each question clearly.
-      Let's begin your interview.`;
-
-    speakText(greeting);
-
-    const timer = setTimeout(() => {
-      speakQuestion(questions[0].question);
-    }, 4500);
-
-    return () => {
-      clearTimeout(timer);
-      window.speechSynthesis.cancel();
-
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-    };
-  }, []);
-
-  // ===================================================
-  // TOTAL INTERVIEW TIMER
-  // ===================================================
-
-  useEffect(() => {
-    if (!interviewStarted) return;
-
-    if (totalTimeLeft <= 0) {
-      finishInterview();
-      return;
-    }
-
-    const timer = setInterval(() => {
-      setTotalTimeLeft((prev) => prev - 1);
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [interviewStarted, totalTimeLeft]);
-
-  // ===================================================
-  // QUESTION TIMER
-  // ===================================================
-
-  useEffect(() => {
-    if (!interviewStarted || !questions.length) return;
-
-    if (questionTimeLeft <= 0) {
-      handleQuestionTimeout();
-      return;
-    }
-
-    const timer = setInterval(() => {
-      setQuestionTimeLeft((prev) => prev - 1);
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [
-    interviewStarted,
-    currentQuestion,
-    questionTimeLeft,
-  ]);
-
-  // ===================================================
   // SPEECH SYNTHESIS
   // ===================================================
 
   const speakText = (text) => {
+    if (!text) return;
+
     if (!window.speechSynthesis) {
       return;
     }
 
     window.speechSynthesis.cancel();
 
-    const speech = new SpeechSynthesisUtterance(text);
+    const speech =
+      new SpeechSynthesisUtterance(text);
 
     speech.lang = "en-US";
+
     speech.rate = 0.95;
+
     speech.pitch = 1;
+
+    speech.volume = 1;
 
     speech.onstart = () => {
       setIsSpeaking(true);
@@ -237,6 +190,224 @@ const InterviewSetup = () => {
 
 
   // ===================================================
+  // START INTERVIEW IN DATABASE
+  // ===================================================
+
+  const createInterview = async () => {
+    if (!questions.length) {
+      return null;
+    }
+
+    if (interviewId) {
+      return interviewId;
+    }
+
+    if (interviewStartCalledRef.current) {
+      return null;
+    }
+
+    interviewStartCalledRef.current = true;
+
+    setStartingInterview(true);
+
+    try {
+      const response = await axios.post(
+        ServerUrl + "/api/interview/start",
+        {
+          role: interviewData.role,
+
+          experience:
+            interviewData.experience,
+
+          difficulty:
+            interviewData.difficulty,
+
+          type: interviewData.type,
+
+          questions,
+
+          resumeAnalysis:
+            interviewData.resumeAnalysis || null,
+        },
+        {
+          withCredentials: true,
+        }
+      );
+
+      if (!response.data?.success) {
+        throw new Error(
+          response.data?.message ||
+            "Failed to start interview"
+        );
+      }
+
+      const newInterviewId =
+        response.data.interviewId;
+
+      setInterviewId(newInterviewId);
+
+      return newInterviewId;
+    } catch (error) {
+      console.error(
+        "Start Interview Error:",
+        error.response?.data || error
+      );
+
+      alert(
+        error.response?.data?.message ||
+          "Unable to start interview. Please try again."
+      );
+
+      interviewStartCalledRef.current = false;
+
+      return null;
+    } finally {
+      setStartingInterview(false);
+    }
+  };
+
+
+  // ===================================================
+  // START INTERVIEW
+  // ===================================================
+
+  useEffect(() => {
+    if (!questions.length) {
+      return;
+    }
+
+    let mounted = true;
+
+    const initializeInterview = async () => {
+      const createdInterviewId =
+        await createInterview();
+
+      if (!mounted || !createdInterviewId) {
+        return;
+      }
+
+      setInterviewStarted(true);
+
+      startTimeRef.current = Date.now();
+
+      questionStartTimeRef.current = Date.now();
+
+      const greeting = `
+Hello ${
+        interviewData.name || "Anjali"
+      }.
+
+Welcome to your ${
+        interviewData.type || "AI"
+      } interview.
+
+I will ask you ${
+        questions.length
+      } questions.
+
+Please answer each question clearly.
+
+Let's begin your interview.
+      `.trim();
+
+      speakText(greeting);
+
+      const timer = setTimeout(() => {
+        if (mounted) {
+          speakQuestion(
+            questions[0].question
+          );
+        }
+      }, 4500);
+
+      return () => {
+        clearTimeout(timer);
+      };
+    };
+
+    initializeInterview();
+
+    return () => {
+      mounted = false;
+
+      window.speechSynthesis.cancel();
+
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+
+  // ===================================================
+  // TOTAL INTERVIEW TIMER
+  // ===================================================
+
+  useEffect(() => {
+    if (!interviewStarted) {
+      return;
+    }
+
+    if (totalTimeLeft <= 0) {
+      finishInterview();
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setTotalTimeLeft((prev) => {
+        if (prev <= 1) {
+          return 0;
+        }
+
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [
+    interviewStarted,
+    totalTimeLeft,
+  ]);
+
+
+  // ===================================================
+  // QUESTION TIMER
+  // ===================================================
+
+  useEffect(() => {
+    if (
+      !interviewStarted ||
+      !questions.length ||
+      loadingEvaluation
+    ) {
+      return;
+    }
+
+    if (questionTimeLeft <= 0) {
+      handleQuestionTimeout();
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setQuestionTimeLeft((prev) => {
+        if (prev <= 1) {
+          return 0;
+        }
+
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [
+    interviewStarted,
+    currentQuestion,
+    questionTimeLeft,
+    loadingEvaluation,
+  ]);
+
+
+  // ===================================================
   // SPEECH RECOGNITION
   // ===================================================
 
@@ -249,6 +420,7 @@ const InterviewSetup = () => {
       alert(
         "Speech recognition is not supported in this browser. Please use Google Chrome."
       );
+
       return;
     }
 
@@ -257,10 +429,18 @@ const InterviewSetup = () => {
       return;
     }
 
-    const recognition = new SpeechRecognition();
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+    }
+
+    const recognition =
+      new SpeechRecognition();
 
     recognition.lang = "en-US";
+
     recognition.continuous = true;
+
     recognition.interimResults = true;
 
     recognition.onstart = () => {
@@ -279,7 +459,8 @@ const InterviewSetup = () => {
           event.results[i][0].transcript;
 
         if (event.results[i].isFinal) {
-          finalTranscript += transcript + " ";
+          finalTranscript +=
+            transcript + " ";
         }
       }
 
@@ -287,8 +468,12 @@ const InterviewSetup = () => {
         setAnswers((prev) => {
           const updated = [...prev];
 
-          updated[currentQuestion] =
-            `${updated[currentQuestion] || ""} ${finalTranscript}`.trim();
+          updated[currentQuestion] = `
+            ${updated[currentQuestion] || ""}
+            ${finalTranscript}
+          `
+            .replace(/\s+/g, " ")
+            .trim();
 
           return updated;
         });
@@ -296,7 +481,11 @@ const InterviewSetup = () => {
     };
 
     recognition.onerror = (event) => {
-      console.log("Speech Recognition Error:", event.error);
+      console.log(
+        "Speech Recognition Error:",
+        event.error
+      );
+
       setIsListening(false);
     };
 
@@ -306,7 +495,16 @@ const InterviewSetup = () => {
 
     recognitionRef.current = recognition;
 
-    recognition.start();
+    try {
+      recognition.start();
+    } catch (error) {
+      console.log(
+        "Speech Recognition Start Error:",
+        error
+      );
+
+      setIsListening(false);
+    }
   };
 
 
@@ -316,7 +514,14 @@ const InterviewSetup = () => {
 
   const stopListening = () => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      try {
+        recognitionRef.current.stop();
+      } catch (error) {
+        console.log(
+          "Stop Recognition Error:",
+          error
+        );
+      }
     }
 
     setIsListening(false);
@@ -343,6 +548,10 @@ const InterviewSetup = () => {
   // ===================================================
 
   const handleQuestionTimeout = () => {
+    if (loadingEvaluation) {
+      return;
+    }
+
     stopListening();
 
     speakText(
@@ -360,18 +569,24 @@ const InterviewSetup = () => {
   // ===================================================
 
   const moveToNextQuestion = () => {
-    if (currentQuestion < questions.length - 1) {
-      const nextQuestion = currentQuestion + 1;
+    if (
+      currentQuestion <
+      questions.length - 1
+    ) {
+      const nextQuestion =
+        currentQuestion + 1;
 
       setCurrentQuestion(nextQuestion);
 
-      const nextTime = getQuestionTime(
-        questions[nextQuestion].question
-      );
+      const nextTime =
+        getQuestionTime(
+          questions[nextQuestion].question
+        );
 
       setQuestionTimeLeft(nextTime);
 
-      questionStartTimeRef.current = Date.now();
+      questionStartTimeRef.current =
+        Date.now();
 
       setTimeout(() => {
         speakQuestion(
@@ -391,10 +606,15 @@ const InterviewSetup = () => {
   // ===================================================
 
   const handleNext = () => {
+    if (loadingEvaluation) {
+      return;
+    }
+
     if (!answers[currentQuestion]?.trim()) {
       alert(
         "Please answer the question before continuing."
       );
+
       return;
     }
 
@@ -406,24 +626,33 @@ const InterviewSetup = () => {
 
   // ===================================================
   // PREVIOUS QUESTION
-  // =====================================================
+  // ===================================================
 
   const handlePrevious = () => {
-    if (currentQuestion === 0) {
+    if (
+      currentQuestion === 0 ||
+      loadingEvaluation
+    ) {
       return;
     }
 
     stopListening();
 
-    const previousQuestion = currentQuestion - 1;
+    const previousQuestion =
+      currentQuestion - 1;
 
-    setCurrentQuestion(previousQuestion);
+    setCurrentQuestion(
+      previousQuestion
+    );
 
     setQuestionTimeLeft(
       getQuestionTime(
         questions[previousQuestion].question
       )
     );
+
+    questionStartTimeRef.current =
+      Date.now();
 
     speakQuestion(
       questions[previousQuestion].question
@@ -436,64 +665,163 @@ const InterviewSetup = () => {
   // ===================================================
 
   const finishInterview = async () => {
-    if (loadingEvaluation) return;
+    if (
+      loadingEvaluation ||
+      finishCalledRef.current
+    ) {
+      return;
+    }
+
+    finishCalledRef.current = true;
 
     stopListening();
 
     window.speechSynthesis.cancel();
 
+    setIsSpeaking(false);
+
     setLoadingEvaluation(true);
 
-    const formattedAnswers = questions.map(
-      (question, index) => ({
-        question: question.question,
-        category:
-          question.category || "Interview",
-        answer: answers[index] || "",
-      })
+    const duration = Math.floor(
+      (Date.now() - startTimeRef.current) /
+        1000
     );
 
-    const duration = Math.floor(
-      (Date.now() - startTimeRef.current) / 1000
-    );
+    const formattedAnswers =
+      questions.map(
+        (question, index) => ({
+          question:
+            question.question,
+
+          category:
+            question.category ||
+            "Interview",
+
+          answer:
+            answers[index] || "",
+
+          timeTaken: 0,
+        })
+      );
 
     try {
-      const result = await axios.post(
-        ServerUrl + "/api/interview/evaluate",
+      let finalInterviewId =
+        interviewId;
+
+      // =================================================
+      // SAFETY: CREATE INTERVIEW IF NOT CREATED
+      // =================================================
+
+      if (!finalInterviewId) {
+        finalInterviewId =
+          await createInterview();
+      }
+
+      const response = await axios.post(
+        ServerUrl +
+          "/api/interview/evaluate",
         {
-          role: interviewData.role,
-          experience: interviewData.experience,
-          difficulty: interviewData.difficulty,
-          type: interviewData.type,
-          answers: formattedAnswers,
+          interviewId:
+            finalInterviewId || null,
+
+          role:
+            interviewData.role,
+
+          experience:
+            interviewData.experience,
+
+          difficulty:
+            interviewData.difficulty,
+
+          type:
+            interviewData.type,
+
+          answers:
+            formattedAnswers,
+
+          duration,
+        },
+        {
+          withCredentials: true,
         }
       );
 
-      const evaluation = result.data;
+      if (!response.data?.success) {
+        throw new Error(
+          response.data?.message ||
+            "Interview evaluation failed"
+        );
+      }
 
-      navigate("/interview/result", {
-        state: {
-          interviewData,
-          answers: formattedAnswers,
-          totalQuestions: questions.length,
-          duration,
-          evaluation,
-        },
-      });
+      const evaluation =
+        response.data.evaluation;
 
+      navigate(
+        "/interview/result",
+        {
+          state: {
+            interviewData: {
+              ...interviewData,
+
+              interviewId:
+                response.data.interviewId ||
+                finalInterviewId,
+            },
+
+            answers:
+              formattedAnswers,
+
+            totalQuestions:
+              questions.length,
+
+            duration,
+
+            evaluation,
+          },
+        }
+      );
     } catch (error) {
-      console.log(
+      console.error(
         "Interview Evaluation Error:",
-        error.response?.data || error
+        error.response?.data ||
+          error
       );
 
       alert(
         error.response?.data?.message ||
-          "Unable to evaluate interview."
+          "Unable to evaluate interview. Please try again."
       );
+
+      finishCalledRef.current =
+        false;
 
       setLoadingEvaluation(false);
     }
+  };
+
+
+  // ===================================================
+  // EXIT INTERVIEW
+  // ===================================================
+
+  const handleExitInterview = () => {
+    if (loadingEvaluation) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Are you sure you want to exit this interview? Your current progress may be lost."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    stopListening();
+
+    window.speechSynthesis.cancel();
+
+    navigate("/interview/config");
   };
 
 
@@ -504,9 +832,7 @@ const InterviewSetup = () => {
   if (!questions.length) {
     return (
       <div className="min-h-screen bg-[#f3f3f3] flex items-center justify-center px-5">
-
         <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-8 text-center max-w-md">
-
           <FaRobot
             size={35}
             className="mx-auto mb-4 text-gray-700"
@@ -517,20 +843,72 @@ const InterviewSetup = () => {
           </h2>
 
           <p className="text-gray-500 text-sm mb-6">
-            Please start a new interview to generate AI questions.
+            Please start a new interview to
+            generate AI questions.
           </p>
 
           <button
             onClick={() =>
-              navigate("/interview/config")
+              navigate(
+                "/interview/config"
+              )
             }
             className="bg-black text-white px-6 py-3 rounded-xl"
           >
             Start New Interview
           </button>
-
         </div>
+      </div>
+    );
+  }
 
+
+  // ===================================================
+  // STARTING INTERVIEW SCREEN
+  // ===================================================
+
+  if (
+    !interviewStarted &&
+    startingInterview
+  ) {
+    return (
+      <div className="min-h-screen bg-[#f3f3f3] flex items-center justify-center px-5">
+        <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-10 text-center max-w-md">
+          <motion.div
+            animate={{
+              scale: [1, 1.08, 1],
+              rotate: [0, 5, -5, 0],
+            }}
+            transition={{
+              duration: 1.5,
+              repeat: Infinity,
+            }}
+            className="w-24 h-24 mx-auto mb-6 rounded-full bg-black text-white flex items-center justify-center"
+          >
+            <FaRobot size={40} />
+          </motion.div>
+
+          <h2 className="text-2xl font-bold text-gray-900">
+            Preparing Your Interview
+          </h2>
+
+          <p className="text-gray-500 text-sm mt-2">
+            Setting up your AI interviewer...
+          </p>
+
+          <div className="mt-6 w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+            <motion.div
+              animate={{
+                width: ["20%", "80%", "95%"],
+              }}
+              transition={{
+                duration: 1.5,
+                repeat: Infinity,
+              }}
+              className="h-full bg-green-500 rounded-full"
+            />
+          </div>
+        </div>
       </div>
     );
   }
@@ -541,7 +919,22 @@ const InterviewSetup = () => {
   // ===================================================
 
   const progress =
-    ((currentQuestion + 1) / questions.length) * 100;
+    ((currentQuestion + 1) /
+      questions.length) *
+    100;
+
+  const questionMaximumTime =
+    getQuestionTime(
+      currentQuestionData?.question ||
+        ""
+    );
+
+  const questionTimerProgress =
+    questionMaximumTime > 0
+      ? (questionTimeLeft /
+          questionMaximumTime) *
+        100
+      : 0;
 
 
   // ===================================================
@@ -550,7 +943,6 @@ const InterviewSetup = () => {
 
   return (
     <div className="min-h-screen bg-[#f3f3f3] px-5 py-8">
-
       <div className="max-w-6xl mx-auto">
 
         {/* =================================================
@@ -560,12 +952,12 @@ const InterviewSetup = () => {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
 
           <button
-            onClick={() =>
-              navigate("/interview/config")
-            }
-            className="flex items-center gap-2 text-gray-600 hover:text-black transition"
+            onClick={handleExitInterview}
+            disabled={loadingEvaluation}
+            className="flex items-center gap-2 text-gray-600 hover:text-black transition disabled:opacity-40"
           >
             <FaArrowLeft size={14} />
+
             Exit Interview
           </button>
 
@@ -583,7 +975,9 @@ const InterviewSetup = () => {
 
             <span>
               Total Time:{" "}
-              {formatTime(totalTimeLeft)}
+              {formatTime(
+                totalTimeLeft
+              )}
             </span>
           </div>
 
@@ -601,19 +995,18 @@ const InterviewSetup = () => {
             <div>
 
               <div className="flex items-center gap-2 mb-2">
-
                 <IoSparkles className="text-green-500" />
 
                 <span className="text-green-600 text-sm font-medium">
                   {interviewData.type ||
                     "AI Interview"}
                 </span>
-
               </div>
 
               <h1 className="text-2xl font-bold text-gray-900">
                 {interviewData.role ||
-                  "Developer"} Interview
+                  "Developer"}{" "}
+                Interview
               </h1>
 
               <p className="text-gray-500 text-sm mt-1">
@@ -654,7 +1047,10 @@ const InterviewSetup = () => {
               </span>
 
               <span>
-                {Math.round(progress)}%
+                {Math.round(
+                  progress
+                )}
+                %
               </span>
 
             </div>
@@ -662,7 +1058,9 @@ const InterviewSetup = () => {
             <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
 
               <motion.div
-                initial={{ width: 0 }}
+                initial={{
+                  width: 0,
+                }}
                 animate={{
                   width: `${progress}%`,
                 }}
@@ -700,9 +1098,12 @@ const InterviewSetup = () => {
                 className={`absolute inset-0 rounded-full blur-2xl ${
                   isSpeaking
                     ? "bg-green-400/40"
+                    : isListening
+                    ? "bg-blue-400/40"
                     : "bg-blue-400/20"
                 }`}
               />
+
 
               {/* Avatar */}
 
@@ -711,14 +1112,20 @@ const InterviewSetup = () => {
                   y: isSpeaking
                     ? [0, -8, 0]
                     : [0, -3, 0],
+
                   rotate: isSpeaking
                     ? [-2, 2, -2]
                     : 0,
+
+                  scale: isListening
+                    ? [1, 1.03, 1]
+                    : 1,
                 }}
                 transition={{
                   duration: isSpeaking
                     ? 0.8
                     : 2,
+
                   repeat: Infinity,
                 }}
                 className="relative w-40 h-40 rounded-full bg-gradient-to-br from-gray-100 via-gray-300 to-gray-500 border-4 border-white/20 shadow-2xl flex items-center justify-center"
@@ -736,12 +1143,16 @@ const InterviewSetup = () => {
                     <div className="w-2 h-2 bg-black rounded-full mx-auto mt-1" />
                   </div>
 
+
                   {/* Mouth */}
 
                   <motion.div
                     animate={{
                       scaleY: isSpeaking
                         ? [1, 0.3, 1]
+                        : 1,
+                      scaleX: isSpeaking
+                        ? [1, 0.8, 1]
                         : 1,
                     }}
                     transition={{
@@ -757,6 +1168,8 @@ const InterviewSetup = () => {
 
             </div>
 
+
+            {/* AI Name */}
 
             <div className="text-center">
 
@@ -781,6 +1194,21 @@ const InterviewSetup = () => {
             </div>
 
 
+            {/* AI Message */}
+
+            <div className="w-full mt-5 bg-white/10 border border-white/10 rounded-xl p-3">
+
+              <p className="text-xs text-gray-400 mb-1">
+                AI
+              </p>
+
+              <p className="text-sm text-gray-200 leading-relaxed line-clamp-4">
+                {aiMessage}
+              </p>
+
+            </div>
+
+
             {/* Voice button */}
 
             <button
@@ -789,9 +1217,11 @@ const InterviewSetup = () => {
                   currentQuestionData.question
                 )
               }
-              className="mt-6 flex items-center gap-2 bg-white text-black px-5 py-3 rounded-xl font-medium hover:bg-gray-200 transition"
+              disabled={loadingEvaluation}
+              className="mt-5 flex items-center gap-2 bg-white text-black px-5 py-3 rounded-xl font-medium hover:bg-gray-200 transition disabled:opacity-50"
             >
               <FaVolumeUp size={14} />
+
               Repeat Question
             </button>
 
@@ -818,7 +1248,7 @@ const InterviewSetup = () => {
             className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 md:p-10"
           >
 
-            {/* Question timer */}
+            {/* Question Header */}
 
             <div className="flex items-center justify-between mb-6">
 
@@ -838,25 +1268,27 @@ const InterviewSetup = () => {
                 <FaClock size={14} />
 
                 {questionTimeLeft}s
-
               </div>
 
             </div>
 
 
-            {/* Question timer progress */}
+            {/* Question Timer Progress */}
 
             <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-8">
 
               <motion.div
                 animate={{
-                  width: `${
-                    (questionTimeLeft /
-                      getQuestionTime(
-                        currentQuestionData.question
-                      )) *
-                    100
-                  }%`,
+                  width: `${Math.max(
+                    0,
+                    Math.min(
+                      100,
+                      questionTimerProgress
+                    )
+                  )}%`,
+                }}
+                transition={{
+                  duration: 0.3,
                 }}
                 className={`h-full rounded-full ${
                   questionTimeLeft <= 10
@@ -871,9 +1303,7 @@ const InterviewSetup = () => {
             {/* Question */}
 
             <h2 className="text-2xl md:text-3xl font-semibold text-gray-900 leading-relaxed mb-8">
-
               {currentQuestionData.question}
-
             </h2>
 
 
@@ -888,8 +1318,13 @@ const InterviewSetup = () => {
                 </label>
 
                 <span className="text-xs text-gray-400">
-                  {(answers[currentQuestion] || "")
-                    .length}{" "}
+                  {
+                    (
+                      answers[
+                        currentQuestion
+                      ] || ""
+                    ).length
+                  }{" "}
                   characters
                 </span>
 
@@ -898,7 +1333,9 @@ const InterviewSetup = () => {
 
               <textarea
                 value={
-                  answers[currentQuestion] || ""
+                  answers[
+                    currentQuestion
+                  ] || ""
                 }
                 onChange={(e) =>
                   handleAnswerChange(
@@ -907,7 +1344,8 @@ const InterviewSetup = () => {
                 }
                 placeholder="Type your answer here or use the microphone..."
                 rows={8}
-                className="w-full border border-gray-200 rounded-2xl p-5 resize-none outline-none focus:border-black transition text-gray-700 leading-relaxed"
+                disabled={loadingEvaluation}
+                className="w-full border border-gray-200 rounded-2xl p-5 resize-none outline-none focus:border-black transition text-gray-700 leading-relaxed disabled:bg-gray-50"
               />
 
 
@@ -926,7 +1364,10 @@ const InterviewSetup = () => {
                       ? stopListening
                       : startListening
                   }
-                  className={`flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-medium transition ${
+                  disabled={
+                    loadingEvaluation
+                  }
+                  className={`flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-medium transition disabled:opacity-50 ${
                     isListening
                       ? "bg-red-500 text-white hover:bg-red-600"
                       : "bg-black text-white hover:bg-gray-800"
@@ -936,11 +1377,13 @@ const InterviewSetup = () => {
                   {isListening ? (
                     <>
                       <FaMicrophoneSlash />
+
                       Stop Recording
                     </>
                   ) : (
                     <>
                       <FaMicrophone />
+
                       Answer with Mic
                     </>
                   )}
@@ -956,6 +1399,8 @@ const InterviewSetup = () => {
 
             <div className="flex items-center justify-between mt-8 pt-6 border-t border-gray-100">
 
+              {/* Previous */}
+
               <button
                 onClick={handlePrevious}
                 disabled={
@@ -963,22 +1408,29 @@ const InterviewSetup = () => {
                   loadingEvaluation
                 }
                 className={`flex items-center gap-2 px-5 py-3 rounded-xl border transition ${
-                  currentQuestion === 0
+                  currentQuestion === 0 ||
+                  loadingEvaluation
                     ? "text-gray-300 border-gray-100 cursor-not-allowed"
                     : "text-gray-700 border-gray-200 hover:border-gray-400"
                 }`}
               >
                 <FaArrowLeft size={13} />
+
                 Previous
               </button>
 
 
+              {/* Next / Finish */}
+
               {currentQuestion ===
               questions.length - 1 ? (
-
                 <button
-                  onClick={finishInterview}
-                  disabled={loadingEvaluation}
+                  onClick={
+                    finishInterview
+                  }
+                  disabled={
+                    loadingEvaluation
+                  }
                   className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition disabled:opacity-60"
                 >
 
@@ -991,20 +1443,20 @@ const InterviewSetup = () => {
                   )}
 
                 </button>
-
               ) : (
-
                 <button
                   onClick={handleNext}
-                  disabled={loadingEvaluation}
+                  disabled={
+                    loadingEvaluation
+                  }
                   className="flex items-center gap-2 px-6 py-3 bg-black text-white rounded-xl hover:bg-gray-800 transition disabled:opacity-60"
                 >
-
                   Next Question
-                  <FaArrowRight size={13} />
 
+                  <FaArrowRight
+                    size={13}
+                  />
                 </button>
-
               )}
 
             </div>
@@ -1014,7 +1466,6 @@ const InterviewSetup = () => {
         </div>
 
       </div>
-
     </div>
   );
 };

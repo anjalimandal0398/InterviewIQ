@@ -21,7 +21,7 @@ const answerSchema = new mongoose.Schema(
       type: Number,
       default: 0,
       min: 0,
-      max: 10,
+      max: 100,
     },
 
     feedback: {
@@ -106,28 +106,33 @@ const interviewSchema = new mongoose.Schema(
       type: Number,
       default: 0,
       min: 0,
-      max: 10,
+      max: 100,
     },
 
     communicationScore: {
       type: Number,
       default: 0,
       min: 0,
-      max: 10,
+      max: 100,
     },
 
     correctnessScore: {
       type: Number,
       default: 0,
       min: 0,
-      max: 10,
+      max: 100,
     },
 
     confidenceScore: {
       type: Number,
       default: 0,
       min: 0,
-      max: 10,
+      max: 100,
+    },
+
+    overallFeedback: {
+      type: String,
+      default: "",
     },
 
     strengths: {

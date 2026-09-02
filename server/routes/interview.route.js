@@ -4,12 +4,17 @@ import {
   generateInterviewQuestions,
   startInterview,
   evaluateInterview,
+  getInterviewDashboard,
+  getInterviewHistory,
+  getInterviewById,
 } from "../controllers/interview.controller.js";
+
+import isAuth from "../middlewares/isAuth.js";
 
 const interviewRouter = express.Router();
 
 // =====================================================
-// Generate AI interview questions
+// GENERATE AI INTERVIEW QUESTIONS
 // =====================================================
 
 interviewRouter.post(
@@ -18,21 +23,53 @@ interviewRouter.post(
 );
 
 // =====================================================
-// Start interview and save it in MongoDB
+// START INTERVIEW
 // =====================================================
 
 interviewRouter.post(
   "/start",
+  isAuth,
   startInterview
 );
 
 // =====================================================
-// Evaluate interview answers using AI
+// EVALUATE INTERVIEW
 // =====================================================
 
 interviewRouter.post(
   "/evaluate",
+  isAuth,
   evaluateInterview
+);
+
+// =====================================================
+// INTERVIEW DASHBOARD
+// =====================================================
+
+interviewRouter.get(
+  "/dashboard",
+  isAuth,
+  getInterviewDashboard
+);
+
+// =====================================================
+// INTERVIEW HISTORY
+// =====================================================
+
+interviewRouter.get(
+  "/history",
+  isAuth,
+  getInterviewHistory
+);
+
+// =====================================================
+// GET SINGLE INTERVIEW RESULT
+// =====================================================
+
+interviewRouter.get(
+  "/:id",
+  isAuth,
+  getInterviewById
 );
 
 export default interviewRouter;

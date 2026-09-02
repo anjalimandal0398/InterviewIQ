@@ -1,14 +1,23 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+
 import { motion } from "motion/react";
+
 import {
   FaRobot,
   FaArrowRight,
   FaFilePdf,
-  FaUpload,
   FaCheckCircle,
+  FaSpinner,
+  FaUser,
+  FaCode,
+  FaBriefcase,
+  FaGraduationCap,
 } from "react-icons/fa";
+
 import { IoSparkles } from "react-icons/io5";
+
 import { useNavigate } from "react-router-dom";
+
 import axios from "axios";
 
 import { ServerUrl } from "../App";
@@ -17,159 +26,148 @@ const InterviewConfig = () => {
   const navigate = useNavigate();
 
   const [role, setRole] = useState("MERN Stack Developer");
-  const [experience, setExperience] = useState("Fresher");
-  const [difficulty, setDifficulty] = useState("Medium");
-  const [type, setType] = useState("Technical");
 
-  const [resumeFile, setResumeFile] = useState(null);
-  const [resumeText, setResumeText] = useState("");
-  const [resumeAnalysis, setResumeAnalysis] = useState(null);
+  const [experience, setExperience] =
+    useState("Fresher");
 
-  const [uploadingResume, setUploadingResume] = useState(false);
-  const [analyzingResume, setAnalyzingResume] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [difficulty, setDifficulty] =
+    useState("Medium");
 
-  // ==========================================
-  // HANDLE RESUME SELECT
-  // ==========================================
+  const [type, setType] =
+    useState("Technical");
 
-  const handleResumeSelect = (e) => {
-    const file = e.target.files?.[0];
+  const [resume, setResume] =
+    useState(null);
 
-    if (!file) return;
+  const [loadingResume, setLoadingResume] =
+    useState(true);
 
-    if (file.type !== "application/pdf") {
-      alert("Please upload a PDF resume.");
-      return;
-    }
+  const [loading, setLoading] =
+    useState(false);
 
-    setResumeFile(file);
-    setResumeText("");
-    setResumeAnalysis(null);
-  };
+  // =====================================================
+  // GET SAVED RESUME
+  // =====================================================
 
-  // ==========================================
-  // UPLOAD + EXTRACT RESUME
-  // ==========================================
-
-  const handleResumeUpload = async () => {
-    if (!resumeFile) {
-      alert("Please select a resume first.");
-      return;
-    }
-
+  const fetchMyResume = async () => {
     try {
-      setUploadingResume(true);
+      setLoadingResume(true);
 
-      const formData = new FormData();
-
-      formData.append("resume", resumeFile);
-
-      const result = await axios.post(
-        ServerUrl + "/api/resume/upload",
-        formData
-      );
-
-      if (!result.data.success) {
-        alert("Resume upload failed.");
-        return;
-      }
-
-      const extractedText = result.data.resumeText;
-
-      setResumeText(extractedText);
-
-      alert("Resume uploaded successfully.");
-
-    } catch (error) {
-      console.log(
-        "Resume Upload Error:",
-        error.response?.data || error
-      );
-
-      alert(
-        error.response?.data?.message ||
-          "Unable to upload resume."
-      );
-    } finally {
-      setUploadingResume(false);
-    }
-  };
-
-  // ==========================================
-  // ANALYZE RESUME
-  // ==========================================
-
-  const handleAnalyzeResume = async () => {
-    if (!resumeText) {
-      alert("Please upload your resume first.");
-      return;
-    }
-
-    try {
-      setAnalyzingResume(true);
-
-      const result = await axios.post(
-        ServerUrl + "/api/resume/analyze",
+      const result = await axios.get(
+        `${ServerUrl}/api/resume/my-resume`,
         {
-          resumeText,
+          withCredentials: true,
         }
       );
 
-      if (!result.data.success) {
-        alert("Resume analysis failed.");
-        return;
+      if (result.data.success) {
+        const savedResume = result.data.resume;
+
+        setResume(savedResume);
+
+        // Automatically use AI suggested role
+        const suggestedRoles =
+          savedResume?.analysis?.suggestedRoles;
+
+        if (
+          suggestedRoles &&
+          suggestedRoles.length > 0
+        ) {
+          setRole(suggestedRoles[0]);
+        }
+
+        // Automatically use experience
+        const experienceLevel =
+          savedResume?.analysis?.experienceLevel;
+
+        if (experienceLevel) {
+          const normalized =
+            experienceLevel.toLowerCase();
+
+          if (normalized.includes("fresher")) {
+            setExperience("Fresher");
+          } else if (
+            normalized.includes("0-1")
+          ) {
+            setExperience("0-1 Years");
+          } else if (
+            normalized.includes("1-3")
+          ) {
+            setExperience("1-3 Years");
+          } else if (
+            normalized.includes("3-5")
+          ) {
+            setExperience("3-5 Years");
+          } else if (
+            normalized.includes("5+")
+          ) {
+            setExperience("5+ Years");
+          }
+        }
       }
-
-      const analysis = result.data.analysis;
-
-      setResumeAnalysis(analysis);
-
-      // Automatically use suggested role
-      if (
-        analysis?.suggestedRoles &&
-        analysis.suggestedRoles.length > 0
-      ) {
-        setRole(analysis.suggestedRoles[0]);
-      }
-
     } catch (error) {
-      console.log(
-        "Resume Analysis Error:",
-        error.response?.data || error
-      );
-
-      alert(
-        error.response?.data?.message ||
-          "Unable to analyze resume."
-      );
+      // No resume uploaded yet
+      if (error.response?.status === 404) {
+        setResume(null);
+      } else {
+        console.error(
+          "Interview Resume Error:",
+          error.response?.data || error
+        );
+      }
     } finally {
-      setAnalyzingResume(false);
+      setLoadingResume(false);
     }
   };
 
-  // ==========================================
+  // =====================================================
+  // LOAD SAVED RESUME WHEN PAGE OPENS
+  // =====================================================
+
+  useEffect(() => {
+    fetchMyResume();
+  }, []);
+
+  // =====================================================
   // START INTERVIEW
-  // ==========================================
+  // =====================================================
 
   const handleStartInterview = async () => {
     try {
       setLoading(true);
 
+      const resumeText =
+        resume?.resumeText || "";
+
+      const resumeAnalysis =
+        resume?.analysis || null;
+
       const result = await axios.post(
-        ServerUrl + "/api/interview/generate-questions",
+        `${ServerUrl}/api/interview/generate-questions`,
         {
           role,
           experience,
           difficulty,
           type,
 
-          // Send resume information if available
-          resumeText: resumeText || "",
+          // Saved resume data
+          resumeText,
 
-          resumeAnalysis: resumeAnalysis || null,
+          resumeAnalysis,
+        },
+        {
+          withCredentials: true,
         }
       );
+
+      if (!result.data.success) {
+        alert(
+          result.data.message ||
+            "Unable to generate interview."
+        );
+
+        return;
+      }
 
       navigate("/interview/setup", {
         state: {
@@ -180,13 +178,14 @@ const InterviewConfig = () => {
 
           questions: result.data.questions,
 
+          // Keep resume data for interview
           resumeText,
+
           resumeAnalysis,
         },
       });
-
     } catch (error) {
-      console.log(
+      console.error(
         "Start Interview Error:",
         error.response?.data || error
       );
@@ -200,19 +199,71 @@ const InterviewConfig = () => {
     }
   };
 
+  // =====================================================
+  // LOADING RESUME
+  // =====================================================
+
+  if (loadingResume) {
+    return (
+      <div className="min-h-screen bg-[#f3f3f3] flex items-center justify-center">
+
+        <div className="text-center">
+
+          <FaSpinner
+            className="animate-spin mx-auto text-3xl text-gray-700 mb-4"
+          />
+
+          <p className="text-gray-600">
+            Loading your resume analysis...
+          </p>
+
+        </div>
+
+      </div>
+    );
+  }
+
+  // =====================================================
+  // RESUME ANALYSIS
+  // =====================================================
+
+  const analysis =
+    resume?.analysis || null;
+
+  const candidate =
+    analysis?.candidate || {};
+
+  const skills =
+    analysis?.skills || {};
+
+  const projects =
+    analysis?.projects || [];
+
+  // =====================================================
+  // UI
+  // =====================================================
+
   return (
     <div className="min-h-screen bg-[#f3f3f3] px-5 py-10">
 
       <motion.div
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="w-full max-w-3xl mx-auto"
+        initial={{
+          opacity: 0,
+          y: 30,
+        }}
+        animate={{
+          opacity: 1,
+          y: 0,
+        }}
+        transition={{
+          duration: 0.5,
+        }}
+        className="w-full max-w-4xl mx-auto"
       >
 
-        {/* ==========================================
+        {/* =================================================
             HEADER
-        ========================================== */}
+        ================================================= */}
 
         <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-7 md:p-10 mb-6">
 
@@ -241,168 +292,279 @@ const InterviewConfig = () => {
             </h1>
 
             <p className="text-gray-500 text-sm mt-2">
-              Configure your interview or let AI personalize it
-              using your resume.
+              Configure your interview. Your saved resume
+              analysis will automatically personalize the interview.
             </p>
 
           </div>
 
         </div>
 
-        {/* ==========================================
-            RESUME SECTION
-        ========================================== */}
+        {/* =================================================
+            SAVED RESUME
+        ================================================= */}
 
-        <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-7 mb-6">
+        {resume ? (
+          <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-7 mb-6">
 
-          <div className="flex items-center gap-3 mb-5">
+            <div className="flex items-center justify-between mb-6">
 
-            <div className="bg-red-50 text-red-500 p-3 rounded-xl">
-              <FaFilePdf size={20} />
-            </div>
+              <div className="flex items-center gap-3">
 
-            <div>
-              <h2 className="font-bold text-gray-900">
-                Personalize With Your Resume
-              </h2>
-
-              <p className="text-sm text-gray-500">
-                AI will analyze your resume and ask questions
-                based on your skills and projects.
-              </p>
-            </div>
-
-          </div>
-
-          {/* Upload Box */}
-
-          <label className="block cursor-pointer">
-
-            <div className="border-2 border-dashed border-gray-200 hover:border-gray-400 rounded-2xl p-7 text-center transition">
-
-              <FaUpload
-                className="mx-auto text-gray-400 mb-3"
-                size={22}
-              />
-
-              <p className="font-medium text-gray-700">
-                {resumeFile
-                  ? resumeFile.name
-                  : "Click to upload your resume"}
-              </p>
-
-              <p className="text-xs text-gray-400 mt-2">
-                PDF only
-              </p>
-
-            </div>
-
-            <input
-              type="file"
-              accept=".pdf,application/pdf"
-              onChange={handleResumeSelect}
-              className="hidden"
-            />
-
-          </label>
-
-          {/* Upload Button */}
-
-          {resumeFile && !resumeText && (
-
-            <button
-              onClick={handleResumeUpload}
-              disabled={uploadingResume}
-              className="w-full mt-4 bg-black text-white py-3 rounded-xl font-medium disabled:opacity-60"
-            >
-              {uploadingResume
-                ? "Uploading Resume..."
-                : "Upload Resume"}
-            </button>
-
-          )}
-
-          {/* Analyze Button */}
-
-          {resumeText && !resumeAnalysis && (
-
-            <button
-              onClick={handleAnalyzeResume}
-              disabled={analyzingResume}
-              className="w-full mt-4 bg-green-600 text-white py-3 rounded-xl font-medium disabled:opacity-60"
-            >
-              {analyzingResume
-                ? "AI Analyzing Resume..."
-                : "Analyze Resume with AI"}
-            </button>
-
-          )}
-
-          {/* Resume Analysis Success */}
-
-          {resumeAnalysis && (
-
-            <div className="mt-5 bg-green-50 border border-green-100 rounded-2xl p-5">
-
-              <div className="flex items-center gap-2 mb-4">
-
-                <FaCheckCircle className="text-green-600" />
-
-                <p className="font-semibold text-green-700">
-                  Resume Analyzed Successfully
-                </p>
-
-              </div>
-
-              <p className="text-sm text-gray-600 mb-3">
-                Experience Level:{" "}
-                <span className="font-medium">
-                  {resumeAnalysis.experienceLevel}
-                </span>
-              </p>
-
-              {resumeAnalysis.suggestedRoles?.length > 0 && (
+                <div className="bg-green-50 text-green-600 p-3 rounded-xl">
+                  <FaFilePdf size={20} />
+                </div>
 
                 <div>
 
-                  <p className="text-sm font-medium text-gray-700 mb-2">
-                    Suggested Roles
+                  <h2 className="font-bold text-gray-900">
+                    Your Resume
+                  </h2>
+
+                  <p className="text-sm text-gray-500">
+                    Saved resume analysis will be used for this interview.
                   </p>
-
-                  <div className="flex flex-wrap gap-2">
-
-                    {resumeAnalysis.suggestedRoles.map(
-                      (item, index) => (
-
-                        <span
-                          key={index}
-                          className="bg-white border border-green-200 text-green-700 text-xs px-3 py-1.5 rounded-full"
-                        >
-                          {item}
-                        </span>
-
-                      )
-                    )}
-
-                  </div>
 
                 </div>
 
-              )}
+              </div>
+
+              <FaCheckCircle
+                className="text-green-600"
+                size={24}
+              />
 
             </div>
 
-          )}
+            {/* =================================================
+                FILE
+            ================================================= */}
 
-        </div>
+            <div className="bg-green-50 border border-green-100 rounded-2xl p-4 mb-5">
 
-        {/* ==========================================
+              <div className="flex items-center gap-3">
+
+                <FaFilePdf
+                  className="text-red-500"
+                  size={22}
+                />
+
+                <div>
+
+                  <p className="font-medium text-gray-800">
+                    {resume.originalName ||
+                      resume.fileName ||
+                      "Resume.pdf"}
+                  </p>
+
+                  <p className="text-xs text-gray-500 mt-1">
+                    Resume successfully analyzed
+                  </p>
+
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* =================================================
+                CANDIDATE
+            ================================================= */}
+
+            {candidate.name && (
+              <div className="grid md:grid-cols-2 gap-4 mb-5">
+
+                <div className="bg-gray-50 rounded-xl p-4">
+
+                  <div className="flex items-center gap-2 mb-2">
+
+                    <FaUser className="text-gray-500" />
+
+                    <p className="text-xs text-gray-500">
+                      Candidate
+                    </p>
+
+                  </div>
+
+                  <p className="font-semibold text-gray-800">
+                    {candidate.name}
+                  </p>
+
+                </div>
+
+                <div className="bg-gray-50 rounded-xl p-4">
+
+                  <div className="flex items-center gap-2 mb-2">
+
+                    <FaBriefcase className="text-gray-500" />
+
+                    <p className="text-xs text-gray-500">
+                      Experience
+                    </p>
+
+                  </div>
+
+                  <p className="font-semibold text-gray-800">
+                    {analysis?.experienceLevel ||
+                      "Not specified"}
+                  </p>
+
+                </div>
+
+              </div>
+            )}
+
+            {/* =================================================
+                SUGGESTED ROLES
+            ================================================= */}
+
+            {analysis?.suggestedRoles?.length > 0 && (
+              <div className="mb-5">
+
+                <p className="text-sm font-semibold text-gray-700 mb-3">
+                  AI Suggested Roles
+                </p>
+
+                <div className="flex flex-wrap gap-2">
+
+                  {analysis.suggestedRoles.map(
+                    (item, index) => (
+                      <span
+                        key={index}
+                        className="bg-green-50 border border-green-200 text-green-700 text-xs px-3 py-1.5 rounded-full"
+                      >
+                        {item}
+                      </span>
+                    )
+                  )}
+
+                </div>
+
+              </div>
+            )}
+
+            {/* =================================================
+                SKILLS
+            ================================================= */}
+
+            {skills && (
+              <div>
+
+                <p className="text-sm font-semibold text-gray-700 mb-3">
+                  Skills detected from resume
+                </p>
+
+                <div className="flex flex-wrap gap-2">
+
+                  {[
+                    ...(skills.programmingLanguages || []),
+                    ...(skills.frontend || []),
+                    ...(skills.backend || []),
+                    ...(skills.databases || []),
+                    ...(skills.tools || []),
+                  ]
+                    .slice(0, 20)
+                    .map((skill, index) => (
+                      <span
+                        key={index}
+                        className="bg-gray-100 text-gray-700 text-xs px-3 py-1.5 rounded-full"
+                      >
+                        {skill}
+                      </span>
+                    ))}
+
+                </div>
+
+              </div>
+            )}
+
+            {/* =================================================
+                PROJECTS
+            ================================================= */}
+
+            {projects.length > 0 && (
+              <div className="mt-5">
+
+                <div className="flex items-center gap-2 mb-3">
+
+                  <FaCode className="text-gray-500" />
+
+                  <p className="text-sm font-semibold text-gray-700">
+                    Projects detected
+                  </p>
+
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+
+                  {projects.map(
+                    (project, index) => (
+                      <span
+                        key={index}
+                        className="bg-gray-100 text-gray-700 text-xs px-3 py-1.5 rounded-full"
+                      >
+                        {project.name ||
+                          "Project"}
+                      </span>
+                    )
+                  )}
+
+                </div>
+
+              </div>
+            )}
+
+            <div className="mt-5 text-sm text-green-700 bg-green-50 rounded-xl p-4">
+
+              <FaCheckCircle className="inline mr-2" />
+
+              This resume will automatically be used by AI to
+              generate personalized interview questions.
+
+            </div>
+
+          </div>
+        ) : (
+          /* =================================================
+             NO RESUME
+          ================================================= */
+
+          <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-8 mb-6 text-center">
+
+            <FaFilePdf
+              className="mx-auto text-gray-300 mb-4"
+              size={45}
+            />
+
+            <h2 className="font-bold text-gray-900 text-xl">
+              No Resume Found
+            </h2>
+
+            <p className="text-sm text-gray-500 mt-2 mb-5">
+              Please upload and analyze your resume from the
+              Resume Analysis page before starting a personalized
+              interview.
+            </p>
+
+            <button
+              onClick={() =>
+                navigate("/resume")
+              }
+              className="bg-black text-white px-6 py-3 rounded-xl font-medium"
+            >
+              Go To Resume Analysis
+            </button>
+
+          </div>
+        )}
+
+        {/* =================================================
             INTERVIEW SETTINGS
-        ========================================== */}
+        ================================================= */}
 
         <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-7 md:p-10">
 
-          {/* Job Role */}
+          {/* JOB ROLE */}
 
           <div className="mb-5">
 
@@ -412,22 +574,49 @@ const InterviewConfig = () => {
 
             <select
               value={role}
-              onChange={(e) => setRole(e.target.value)}
+              onChange={(e) =>
+                setRole(e.target.value)
+              }
               className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-black"
             >
-              <option>MERN Stack Developer</option>
-              <option>Frontend Developer</option>
-              <option>Backend Developer</option>
-              <option>Full Stack Developer</option>
-              <option>JavaScript Developer</option>
-              <option>Junior Software Engineer</option>
-              <option>Associate Frontend Developer</option>
-              <option>Associate Backend Developer</option>
+
+              <option>
+                MERN Stack Developer
+              </option>
+
+              <option>
+                Frontend Developer
+              </option>
+
+              <option>
+                Backend Developer
+              </option>
+
+              <option>
+                Full Stack Developer
+              </option>
+
+              <option>
+                JavaScript Developer
+              </option>
+
+              <option>
+                Junior Software Engineer
+              </option>
+
+              <option>
+                Associate Frontend Developer
+              </option>
+
+              <option>
+                Associate Backend Developer
+              </option>
+
             </select>
 
           </div>
 
-          {/* Experience */}
+          {/* EXPERIENCE */}
 
           <div className="mb-5">
 
@@ -437,19 +626,23 @@ const InterviewConfig = () => {
 
             <select
               value={experience}
-              onChange={(e) => setExperience(e.target.value)}
+              onChange={(e) =>
+                setExperience(e.target.value)
+              }
               className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-black"
             >
+
               <option>Fresher</option>
               <option>0-1 Years</option>
               <option>1-3 Years</option>
               <option>3-5 Years</option>
               <option>5+ Years</option>
+
             </select>
 
           </div>
 
-          {/* Difficulty */}
+          {/* DIFFICULTY */}
 
           <div className="mb-5">
 
@@ -459,17 +652,21 @@ const InterviewConfig = () => {
 
             <select
               value={difficulty}
-              onChange={(e) => setDifficulty(e.target.value)}
+              onChange={(e) =>
+                setDifficulty(e.target.value)
+              }
               className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-black"
             >
+
               <option>Easy</option>
               <option>Medium</option>
               <option>Hard</option>
+
             </select>
 
           </div>
 
-          {/* Interview Type */}
+          {/* TYPE */}
 
           <div className="mb-8">
 
@@ -479,32 +676,42 @@ const InterviewConfig = () => {
 
             <select
               value={type}
-              onChange={(e) => setType(e.target.value)}
+              onChange={(e) =>
+                setType(e.target.value)
+              }
               className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-black"
             >
+
               <option>Technical</option>
               <option>HR</option>
               <option>Mixed</option>
+
             </select>
 
           </div>
 
-          {/* Start Button */}
+          {/* START */}
 
           <motion.button
             onClick={handleStartInterview}
-            disabled={loading}
+            disabled={loading || !resume}
             whileHover={{
-              scale: loading ? 1 : 1.02,
+              scale:
+                loading || !resume
+                  ? 1
+                  : 1.02,
             }}
             whileTap={{
-              scale: loading ? 1 : 0.97,
+              scale:
+                loading || !resume
+                  ? 1
+                  : 0.97,
             }}
-            className="w-full bg-black text-white py-4 rounded-xl flex items-center justify-center gap-3 font-medium disabled:opacity-60"
+            className="w-full bg-black text-white py-4 rounded-xl flex items-center justify-center gap-3 font-medium disabled:opacity-50"
           >
 
             {loading
-              ? "Generating Interview..."
+              ? "Generating Personalized Interview..."
               : "Start AI Interview"}
 
             {!loading && (

@@ -1,10 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import Interview from "../models/interview.js";
+import User from "../models/user.js";
+
 
 dotenv.config();
-
-
 // =====================================================
 // GENERATE INTERVIEW QUESTIONS
 // =====================================================
@@ -33,16 +33,11 @@ export const generateInterviewQuestions = async (req, res) => {
 
     let interviewInstructions = "";
 
-    // =====================================================
-    // INTERVIEW TYPE
-    // =====================================================
-
     if (type === "Technical") {
       interviewInstructions = `
 Focus mainly on technical knowledge.
 
 Ask questions related to:
-
 - Programming fundamentals
 - JavaScript
 - React.js
@@ -55,8 +50,7 @@ Ask questions related to:
 - Projects
 - Problem solving
 
-Questions should test actual technical understanding,
-not just definitions.
+Questions should test actual technical understanding.
 `;
     }
 
@@ -65,7 +59,6 @@ not just definitions.
 Focus mainly on HR and behavioral questions.
 
 Ask questions related to:
-
 - Self introduction
 - Strengths and weaknesses
 - Career goals
@@ -89,21 +82,14 @@ Create a balanced interview containing both technical
 and HR/behavioral questions.
 
 Include:
-
 - Technical concepts
 - Projects
 - Problem solving
 - Communication
 - Behavioral situations
 - Career related questions
-
-Maintain a reasonable balance between technical and HR questions.
 `;
     }
-
-    // =====================================================
-    // RESUME INFORMATION
-    // =====================================================
 
     let resumeInstructions = "";
 
@@ -114,21 +100,17 @@ The candidate has uploaded a resume.
 Use the resume information to personalize the interview.
 
 IMPORTANT:
-
 - Ask questions based on skills actually present in the resume.
 - Ask questions about projects mentioned in the resume.
 - Ask questions about technologies mentioned in the resume.
-- Ask questions from the interview focus areas identified from the resume.
-- Do not invent experience that is not present in the resume.
-- Do not ask about technologies that are completely unrelated to the resume.
-- For project questions, ask practical questions about what the candidate actually built.
+- Do not invent experience.
+- Do not ask about completely unrelated technologies.
+- Ask practical questions about projects.
 
 RESUME ANALYSIS:
-
 ${JSON.stringify(resumeAnalysis || {}, null, 2)}
 
 RESUME TEXT:
-
 ${resumeText || "Not available"}
 `;
     } else {
@@ -139,10 +121,6 @@ Generate questions based on the selected job role,
 experience level, difficulty and interview type.
 `;
     }
-
-    // =====================================================
-    // AI PROMPT
-    // =====================================================
 
     const prompt = `
 You are an expert interviewer conducting a real job interview.
@@ -169,18 +147,18 @@ IMPORTANT RULES:
 
 1. Questions must match the candidate's experience level.
 2. Questions must match the selected difficulty.
-3. Questions must match the interview type.
+3. Questions must match the selected interview type.
 4. Avoid duplicate questions.
 5. Questions should be practical and interview-oriented.
-6. If resume information is available, personalize the questions using it.
-7. Do not invent information about the candidate.
+6. Personalize questions using resume information when available.
+7. Do not invent candidate information.
 8. Keep questions clear and understandable.
 9. Each question should test a meaningful skill.
 10. Return ONLY valid JSON.
 11. Do not use markdown.
 12. Do not use code fences.
 
-Return exactly this structure:
+Return exactly:
 
 {
   "questions": [
@@ -192,16 +170,12 @@ Return exactly this structure:
 }
 `;
 
-    // =====================================================
-    // GEMINI
-    // =====================================================
-
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: prompt,
     });
 
-    const text = response.text;
+    const text = response.text || "";
 
     const cleanedResponse = text
       .replace(/```json/g, "")
@@ -209,10 +183,6 @@ Return exactly this structure:
       .trim();
 
     const data = JSON.parse(cleanedResponse);
-
-    // =====================================================
-    // VALIDATE QUESTIONS
-    // =====================================================
 
     if (
       !data.questions ||
@@ -229,7 +199,6 @@ Return exactly this structure:
       success: true,
       questions: data.questions,
     });
-
   } catch (error) {
     console.error("Generate Questions Error:", error);
 
@@ -239,7 +208,6 @@ Return exactly this structure:
     });
   }
 };
-
 
 // =====================================================
 // START INTERVIEW
@@ -256,12 +224,20 @@ export const startInterview = async (req, res) => {
       resumeAnalysis,
     } = req.body;
 
+    // =====================================================
+    // AUTHENTICATION CHECK
+    // =====================================================
+
     if (!req.userId) {
       return res.status(401).json({
         success: false,
         message: "User authentication required",
       });
     }
+
+    // =====================================================
+    // VALIDATE INTERVIEW DETAILS
+    // =====================================================
 
     if (!role || !experience || !difficulty || !type) {
       return res.status(400).json({
@@ -270,12 +246,68 @@ export const startInterview = async (req, res) => {
       });
     }
 
+    // =====================================================
+    // VALIDATE QUESTIONS
+    // =====================================================
+
     if (!Array.isArray(questions) || questions.length === 0) {
       return res.status(400).json({
         success: false,
         message: "Interview questions are required",
       });
     }
+
+    // =====================================================
+    // INTERVIEW CREDIT COST
+    // =====================================================
+
+    const INTERVIEW_COST = 10;
+
+    // =====================================================
+    // CHECK + DEDUCT CREDITS ATOMICALLY
+    // =====================================================
+
+    const user = await User.findOneAndUpdate(
+      {
+        _id: req.userId,
+        credits: { $gte: INTERVIEW_COST },
+      },
+      {
+        $inc: {
+          credits: -INTERVIEW_COST,
+        },
+      },
+      {
+        returnDocument: "after",
+      }
+    );
+
+    // =====================================================
+    // INSUFFICIENT CREDITS
+    // =====================================================
+
+    if (!user) {
+      const currentUser = await User.findById(req.userId);
+
+      if (!currentUser) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      return res.status(402).json({
+        success: false,
+        message: "Insufficient credits",
+        requiredCredits: INTERVIEW_COST,
+        availableCredits: currentUser.credits,
+        shouldBuyCredits: true,
+      });
+    }
+
+    // =====================================================
+    // FORMAT QUESTIONS
+    // =====================================================
 
     const formattedQuestions = questions.map((item) => ({
       question: item.question,
@@ -286,36 +318,59 @@ export const startInterview = async (req, res) => {
       timeTaken: 0,
     }));
 
-    const interview = await Interview.create({
-      user: req.userId,
+    // =====================================================
+    // CREATE INTERVIEW
+    // =====================================================
 
-      role,
-      experience,
-      difficulty,
-      type,
+    try {
+      const interview = await Interview.create({
+        user: req.userId,
+        role,
+        experience,
+        difficulty,
+        type,
+        resumeBased: !!resumeAnalysis,
+        resumeAnalysis: resumeAnalysis || null,
+        questions: formattedQuestions,
+        status: "incomplete",
+        totalQuestions: formattedQuestions.length,
+        answeredQuestions: 0,
+        startedAt: new Date(),
+      });
 
-      resumeBased: !!resumeAnalysis,
-      resumeAnalysis: resumeAnalysis || null,
+      // =====================================================
+      // SUCCESS RESPONSE
+      // =====================================================
 
-      questions: formattedQuestions,
+      return res.status(201).json({
+        success: true,
+        message: "Interview started successfully",
+        interviewId: interview._id,
+        remainingCredits: user.credits,
+        creditsUsed: INTERVIEW_COST,
+        interview,
+      });
+    } catch (interviewError) {
+      // =====================================================
+      // REFUND CREDIT IF INTERVIEW CREATION FAILS
+      // =====================================================
 
-      status: "incomplete",
+      console.error(
+        "Interview Creation Error:",
+        interviewError
+      );
 
-      totalQuestions: formattedQuestions.length,
-      answeredQuestions: 0,
+      await User.findByIdAndUpdate(req.userId, {
+        $inc: {
+          credits: INTERVIEW_COST,
+        },
+      });
 
-      startedAt: new Date(),
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: "Interview started successfully",
-
-      interviewId: interview._id,
-
-      interview,
-    });
-
+      return res.status(500).json({
+        success: false,
+        message: "Failed to start interview. Credits have been refunded.",
+      });
+    }
   } catch (error) {
     console.error("Start Interview Error:", error);
 
@@ -325,7 +380,6 @@ export const startInterview = async (req, res) => {
     });
   }
 };
-
 
 // =====================================================
 // EVALUATE INTERVIEW
@@ -343,14 +397,14 @@ export const evaluateInterview = async (req, res) => {
       duration,
     } = req.body;
 
-    if (!interviewId) {
-      return res.status(400).json({
+    if (!req.userId) {
+      return res.status(401).json({
         success: false,
-        message: "Interview ID is required",
+        message: "User authentication required",
       });
     }
 
-    if (!role || !experience || !difficulty || !type || !answers) {
+    if (!role || !experience || !difficulty || !type) {
       return res.status(400).json({
         success: false,
         message: "Interview data is required",
@@ -368,17 +422,50 @@ export const evaluateInterview = async (req, res) => {
     // FIND INTERVIEW
     // =====================================================
 
-    const interview = await Interview.findById(interviewId);
+    let interview = null;
 
-    if (!interview) {
-      return res.status(404).json({
-        success: false,
-        message: "Interview not found",
+    if (interviewId) {
+      interview = await Interview.findOne({
+        _id: interviewId,
+        user: req.userId,
       });
     }
 
     // =====================================================
-    // AI
+    // CREATE INTERVIEW IF NOT FOUND
+    // =====================================================
+
+    if (!interview) {
+      const questionsForInterview = answers.map((item) => ({
+        question: item.question,
+        category: item.category || "Interview",
+        answer: item.answer || "",
+        score: 0,
+        feedback: "",
+        timeTaken:
+          typeof item.timeTaken === "number"
+            ? item.timeTaken
+            : 0,
+      }));
+
+      interview = await Interview.create({
+        user: req.userId,
+        role,
+        experience,
+        difficulty,
+        type,
+        questions: questionsForInterview,
+        totalQuestions: questionsForInterview.length,
+        answeredQuestions: answers.filter(
+          (item) => item.answer?.trim()
+        ).length,
+        status: "incomplete",
+        startedAt: new Date(),
+      });
+    }
+
+    // =====================================================
+    // GEMINI EVALUATION
     // =====================================================
 
     const ai = new GoogleGenAI({
@@ -386,9 +473,7 @@ export const evaluateInterview = async (req, res) => {
     });
 
     const prompt = `
-You are an expert technical interviewer.
-
-Evaluate the candidate's interview answers carefully.
+You are an expert interviewer evaluating a real job interview.
 
 Job Role:
 ${role}
@@ -406,33 +491,33 @@ Candidate Answers:
 
 ${JSON.stringify(answers, null, 2)}
 
-Evaluate each answer based on:
+Evaluate every answer carefully.
 
+For every question give a score from 0 to 100.
+
+Scoring should consider:
 - Technical correctness
 - Understanding
 - Relevance
 - Clarity
 - Completeness
 - Practical knowledge
-
-Give every question a score out of 10.
-
-Then calculate an overall score out of 100.
-
-For a fresher, do not expect advanced professional-level answers.
-Focus on conceptual correctness and understanding.
-
-Also evaluate:
-
 - Communication
-- Correctness
 - Confidence
 
-Return ONLY valid JSON.
-Do not use markdown.
-Do not use code fences.
+For a fresher, do not expect advanced professional-level answers.
 
-Return exactly this structure:
+Calculate:
+- overallScore out of 100
+- communicationScore out of 100
+- correctnessScore out of 100
+- confidenceScore out of 100
+
+Give useful and realistic feedback.
+
+Return ONLY valid JSON.
+
+Return exactly:
 
 {
   "overallScore": 0,
@@ -455,16 +540,12 @@ Return exactly this structure:
 }
 `;
 
-    // =====================================================
-    // GEMINI EVALUATION
-    // =====================================================
-
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: prompt,
     });
 
-    const text = response.text;
+    const text = response.text || "";
 
     const cleanedResponse = text
       .replace(/```json/g, "")
@@ -474,74 +555,106 @@ Return exactly this structure:
     const evaluation = JSON.parse(cleanedResponse);
 
     // =====================================================
-    // UPDATE QUESTION RESULTS
+    // SCORE NORMALIZER
     // =====================================================
 
-    const evaluatedQuestions = evaluation.questionEvaluations || [];
+    const normalizeScore = (value) => {
+      const score = Number(value);
 
-    interview.questions = interview.questions.map((question, index) => {
-      const evaluated = evaluatedQuestions[index];
+      if (Number.isNaN(score)) {
+        return 0;
+      }
 
-      return {
-        question: question.question,
-        category: question.category,
+      return Math.max(0, Math.min(100, score));
+    };
 
-        answer: evaluated?.answer || answers[index]?.answer || "",
-
-        score:
-          typeof evaluated?.score === "number"
-            ? evaluated.score
-            : 0,
-
-        feedback: evaluated?.feedback || "",
-
-        timeTaken:
-          typeof answers[index]?.timeTaken === "number"
-            ? answers[index].timeTaken
-            : 0,
-      };
-    });
+    const evaluatedQuestions =
+      Array.isArray(evaluation.questionEvaluations)
+        ? evaluation.questionEvaluations
+        : [];
 
     // =====================================================
-    // SAVE FINAL RESULT
+    // UPDATE QUESTIONS
+    // =====================================================
+
+    interview.questions = interview.questions.map(
+      (question, index) => {
+        const evaluated = evaluatedQuestions[index];
+        const submittedAnswer = answers[index];
+
+        return {
+          question: question.question,
+
+          category:
+            question.category ||
+            submittedAnswer?.category ||
+            evaluated?.category ||
+            "Interview",
+
+          answer:
+            submittedAnswer?.answer ||
+            evaluated?.answer ||
+            "",
+
+          score: normalizeScore(evaluated?.score),
+
+          feedback: evaluated?.feedback || "",
+
+          timeTaken:
+            typeof submittedAnswer?.timeTaken === "number"
+              ? submittedAnswer.timeTaken
+              : 0,
+        };
+      }
+    );
+
+    // =====================================================
+    // SAVE RESULT
     // =====================================================
 
     interview.status = "completed";
 
-    interview.answeredQuestions = answers.length;
+    interview.answeredQuestions = answers.filter(
+      (item) => item.answer?.trim()
+    ).length;
 
     interview.duration =
       typeof duration === "number" ? duration : 0;
 
-    interview.overallScore =
-      typeof evaluation.overallScore === "number"
-        ? evaluation.overallScore
-        : 0;
+    interview.overallScore = normalizeScore(
+      evaluation.overallScore
+    );
 
-    interview.communicationScore =
-      typeof evaluation.communicationScore === "number"
-        ? evaluation.communicationScore
-        : 0;
+    interview.communicationScore = normalizeScore(
+      evaluation.communicationScore
+    );
 
-    interview.correctnessScore =
-      typeof evaluation.correctnessScore === "number"
-        ? evaluation.correctnessScore
-        : 0;
+    interview.correctnessScore = normalizeScore(
+      evaluation.correctnessScore
+    );
 
-    interview.confidenceScore =
-      typeof evaluation.confidenceScore === "number"
-        ? evaluation.confidenceScore
-        : 0;
+    interview.confidenceScore = normalizeScore(
+      evaluation.confidenceScore
+    );
 
-    interview.strengths = Array.isArray(evaluation.strengths)
+    interview.overallFeedback =
+      evaluation.overallFeedback || "";
+
+    interview.strengths = Array.isArray(
+      evaluation.strengths
+    )
       ? evaluation.strengths
       : [];
 
-    interview.weaknesses = Array.isArray(evaluation.weaknesses)
+    interview.weaknesses = Array.isArray(
+      evaluation.weaknesses
+    )
       ? evaluation.weaknesses
       : [];
 
-    interview.suggestions = Array.isArray(evaluation.suggestions)
+    interview.suggestions = Array.isArray(
+      evaluation.suggestions
+    )
       ? evaluation.suggestions
       : [];
 
@@ -549,39 +662,210 @@ Return exactly this structure:
 
     await interview.save();
 
-    // =====================================================
-    // RESPONSE
-    // =====================================================
-
     return res.status(200).json({
       success: true,
       message: "Interview evaluated successfully",
-
       interviewId: interview._id,
 
       evaluation: {
         overallScore: interview.overallScore,
-        communicationScore: interview.communicationScore,
-        correctnessScore: interview.correctnessScore,
-        confidenceScore: interview.confidenceScore,
+        communicationScore:
+          interview.communicationScore,
+        correctnessScore:
+          interview.correctnessScore,
+        confidenceScore:
+          interview.confidenceScore,
 
         overallFeedback:
-          evaluation.overallFeedback || "",
+          interview.overallFeedback,
 
         strengths: interview.strengths,
         weaknesses: interview.weaknesses,
         suggestions: interview.suggestions,
 
-        questionEvaluations: evaluatedQuestions,
+        questionEvaluations:
+          interview.questions.map((item) => ({
+            question: item.question,
+            category: item.category,
+            answer: item.answer,
+            score: item.score,
+            feedback: item.feedback,
+          })),
       },
     });
-
   } catch (error) {
     console.error("Evaluate Interview Error:", error);
 
     return res.status(500).json({
       success: false,
       message: "Failed to evaluate interview",
+    });
+  }
+};
+
+// =====================================================
+// DASHBOARD STATS
+// =====================================================
+
+export const getInterviewDashboard = async (req, res) => {
+  try {
+    if (!req.userId) {
+      return res.status(401).json({
+        success: false,
+        message: "User authentication required",
+      });
+    }
+
+    const interviews = await Interview.find({
+      user: req.userId,
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const totalInterviews = interviews.length;
+
+    const completedInterviews = interviews.filter(
+      (item) => item.status === "completed"
+    );
+
+    const completedCount = completedInterviews.length;
+
+    const averageScore =
+      completedCount > 0
+        ? completedInterviews.reduce(
+            (sum, item) => sum + (item.overallScore || 0),
+            0
+          ) / completedCount
+        : 0;
+
+    const latestCompleted =
+      completedInterviews.length > 0
+        ? completedInterviews[0]
+        : null;
+
+    const performance = {
+      technicalSkills: latestCompleted?.correctnessScore || 0,
+      communication: latestCompleted?.communicationScore || 0,
+      confidence: latestCompleted?.confidenceScore || 0,
+      correctness: latestCompleted?.correctnessScore || 0,
+    };
+
+    const recentInterviews = interviews
+      .slice(0, 5)
+      .map((item) => ({
+        _id: item._id,
+        role: item.role,
+        type: item.type,
+        difficulty: item.difficulty,
+        experience: item.experience,
+        status: item.status,
+        overallScore: item.overallScore || 0,
+        totalQuestions: item.totalQuestions || 0,
+        answeredQuestions: item.answeredQuestions || 0,
+        duration: item.duration || 0,
+        startedAt: item.startedAt,
+        completedAt: item.completedAt,
+        createdAt: item.createdAt,
+      }));
+
+    return res.status(200).json({
+      success: true,
+
+      stats: {
+        totalInterviews,
+        completedInterviews: completedCount,
+        averageScore: Number(averageScore.toFixed(1)),
+      },
+
+      performance,
+
+      recentInterviews,
+    });
+  } catch (error) {
+    console.error("Dashboard Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load interview dashboard",
+    });
+  }
+};
+
+
+// =====================================================
+// GET SINGLE INTERVIEW RESULT
+// =====================================================
+
+export const getInterviewById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!req.userId) {
+      return res.status(401).json({
+        success: false,
+        message: "User authentication required",
+      });
+    }
+
+    const interview = await Interview.findOne({
+      _id: id,
+      user: req.userId,
+    });
+
+    if (!interview) {
+      return res.status(404).json({
+        success: false,
+        message: "Interview not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      interview,
+    });
+  } catch (error) {
+    console.error("Get Interview Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch interview result",
+    });
+  }
+};
+
+// =====================================================
+// GET ALL INTERVIEW HISTORY
+// =====================================================
+
+export const getInterviewHistory = async (req, res) => {
+  try {
+    if (!req.userId) {
+      return res.status(401).json({
+        success: false,
+        message: "User authentication required",
+      });
+    }
+
+    const interviews = await Interview.find({
+      user: req.userId,
+    })
+      .sort({ createdAt: -1 })
+      .select(
+        "role experience difficulty type resumeBased status totalQuestions answeredQuestions duration overallScore communicationScore correctnessScore confidenceScore overallFeedback strengths weaknesses suggestions startedAt completedAt createdAt"
+      )
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      count: interviews.length,
+      interviews,
+    });
+  } catch (error) {
+    console.error("Get Interview History Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch interview history",
     });
   }
 };

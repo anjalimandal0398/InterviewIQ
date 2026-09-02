@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 import axios from "axios";
 import { useDispatch } from "react-redux";
 
@@ -9,6 +9,10 @@ import Dashboard from "./pages/Dashboard";
 import InterviewConfig from "./pages/InterviewConfig";
 import InterviewSetup from "./pages/InterviewSetup";
 import InterviewResult from "./pages/InterviewResult";
+import InterviewHistory from "./pages/InterviewHistory";
+import Profile from "./pages/Profile";
+import Credits from "./pages/Credits";
+import ResumeAnalysis from "./pages/ResumeAnalysis/ResumeAnalysis";
 
 import { setUserData } from "./redux/userSlice";
 
@@ -21,7 +25,7 @@ function App() {
     const getUser = async () => {
       try {
         const result = await axios.get(
-          ServerUrl + "/api/user/current-user",
+          `${ServerUrl}/api/user/current-user`,
           {
             withCredentials: true,
           }
@@ -29,7 +33,11 @@ function App() {
 
         dispatch(setUserData(result.data));
       } catch (error) {
-        console.log(error.response?.data);
+        console.log(
+          "Current User Error:",
+          error.response?.data || error
+        );
+
         dispatch(setUserData(null));
       }
     };
@@ -39,23 +47,20 @@ function App() {
 
   return (
     <Routes>
-
       {/* Home */}
-      <Route
-        path="/"
-        element={<Home />}
-      />
+      <Route path="/" element={<Home />} />
 
       {/* Authentication */}
-      <Route
-        path="/auth"
-        element={<Auth />}
-      />
+      <Route path="/auth" element={<Auth />} />
 
       {/* Dashboard */}
+      <Route path="/dashboard" element={<Dashboard />} />
+
+      {/* Resume Analysis */}
+      <Route path="/resume" element={<ResumeAnalysis />} />
       <Route
-        path="/dashboard"
-        element={<Dashboard />}
+        path="/resume-analysis"
+        element={<ResumeAnalysis />}
       />
 
       {/* Interview Configuration */}
@@ -76,6 +81,34 @@ function App() {
         element={<InterviewResult />}
       />
 
+      {/* Interview Result With ID */}
+      <Route
+        path="/interview/result/:id"
+        element={<InterviewResult />}
+      />
+
+      {/* Interview History */}
+      <Route
+        path="/history"
+        element={<InterviewHistory />}
+      />
+
+      <Route
+        path="/interview/history"
+        element={<InterviewHistory />}
+      />
+
+      {/* Profile */}
+      <Route
+        path="/profile"
+        element={<Profile />}
+      />
+
+      {/* Credits */}
+      <Route
+        path="/credits"
+        element={<Credits />}
+      />
     </Routes>
   );
 }

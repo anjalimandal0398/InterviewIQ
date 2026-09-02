@@ -87,7 +87,7 @@ const Navbar = () => {
                   </p>
 
                   <button
-                    onClick={() => navigate("/pricing")}
+                    onClick={() => navigate("/credits")}
                     className="w-full bg-black text-white py-2 rounded-lg text-sm hover:bg-gray-800 transition"
                   >
                     Buy more credits
