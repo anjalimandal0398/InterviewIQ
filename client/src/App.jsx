@@ -1,6 +1,9 @@
 import React, { useEffect } from "react";
+
 import { Routes, Route } from "react-router-dom";
+
 import axios from "axios";
+
 import { useDispatch } from "react-redux";
 
 import Home from "./pages/Home";
@@ -16,7 +19,9 @@ import ResumeAnalysis from "./pages/ResumeAnalysis/ResumeAnalysis";
 
 import { setUserData } from "./redux/userSlice";
 
-export const ServerUrl = "http://localhost:8000";
+// Local development + production backend URL
+export const ServerUrl =
+  import.meta.env.VITE_SERVER_URL || "http://localhost:8000";
 
 function App() {
   const dispatch = useDispatch();
@@ -58,6 +63,7 @@ function App() {
 
       {/* Resume Analysis */}
       <Route path="/resume" element={<ResumeAnalysis />} />
+
       <Route
         path="/resume-analysis"
         element={<ResumeAnalysis />}
