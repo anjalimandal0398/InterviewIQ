@@ -14,21 +14,46 @@ dotenv.config();
 
 const app = express();
 
+/* =========================
+   CORS CONFIGURATION
+========================= */
+
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: [
+      // Local development
+      "http://localhost:5173",
+
+      // Vercel production domain
+      "https://interview-iq-nine-mu.vercel.app",
+
+      // Current Vercel deployment/preview domain
+      "https://interview-c5lueb9ox-anjalimandal0398s-projects.vercel.app",
+    ],
     credentials: true,
   })
 );
 
+/* =========================
+   MIDDLEWARE
+========================= */
+
 app.use(express.json());
 app.use(cookieParser());
+
+/* =========================
+   API ROUTES
+========================= */
 
 app.use("/api/auth", authRouter);
 app.use("/api/user", userRouter);
 app.use("/api/interview", interviewRouter);
 app.use("/api/resume", resumeRouter);
 app.use("/api/payment", paymentRouter);
+
+/* =========================
+   SERVER
+========================= */
 
 const PORT = process.env.PORT || 6000;
 
